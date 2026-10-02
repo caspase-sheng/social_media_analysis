@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社交媒体谣言检测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<!-- data-page 是给 script.js 用的，脚本靠它区分当前是哪个页面 -->
+<body data-page="index">
+
+<div class="topbar">
+    <div class="wrap">
+        <h1>社交媒体谣言检测系统</h1>
+        <div class="sub">大三课程项目 · 谣言检测界面设计</div>
+    </div>
+</div>
+
+<div class="wrap">
+
+    <!-- 一、顶部统计，数字由 /api/overview 提供 -->
+    <div class="stats" id="stats">
+        <div class="stat">
+            <div class="num" id="stat-total">-</div>
+            <div class="label">消息总数</div>
+        </div>
+        <div class="stat">
+            <div class="num" id="stat-undone">-</div>
+            <div class="label">待人工校验</div>
+        </div>
+        <div class="stat">
+            <div class="num" id="stat-verified">-</div>
+            <div class="label">已处理</div>
+        </div>
+        <div class="stat warn">
+            <div class="num" id="stat-rumor">-</div>
+            <div class="label">已确认谣言</div>
+        </div>
+    </div>
+
+    <!-- 二、搜索和筛选，四个模块里的“关键字搜索”就在这里 -->
+    <div class="card">
+        <h2>关键字搜索与筛选</h2>
+        <div class="toolbar">
+            <div class="field">
+                <label for="kw">关键词</label>
+                <input type="text" id="kw" placeholder="输入关键词，如：小区">
+            </div>
+            <div class="field">
+                <label for="min-prob">谣言概率下限</label>
+                <input type="number" id="min-prob" min="0" max="1" step="0.1" placeholder="0.5">
+            </div>
+            <div class="field">
+                <label for="nature">人工性质</label>
+                <select id="nature">
+                    <option value="">全部</option>
+                    <option value="谣言">谣言</option>
+                    <option value="非谣言">非谣言</option>
+                </select>
+            </div>
+            <button class="btn" id="btn-search">搜索</button>
+            <button class="btn plain" id="btn-reset">重置</button>
+        </div>
+    </div>
+
+    <!-- 三、消息列表：待处理 / 已处理两个标签页 -->
+    <div class="card">
+        <div class="tabs">
+            <button class="tab active" data-tab="pending">消息列表</button>
+            <button class="tab" data-tab="processed">已处理文本</button>
+        </div>
+
+        <table>
+            <thead>
+            <tr id="table-head">
+                <th style="width:52px;">ID</th>
+                <th>正文</th>
+                <th style="width:96px;">来源</th>
+                <th style="width:150px;">发布时间</th>
+                <th style="width:130px;">谣言概率</th>
+                <th style="width:82px;">状态</th>
+                <th style="width:120px;">操作</th>
+            </tr>
+            </thead>
+            <tbody id="table-body">
+            <tr><td colspan="7" class="empty">正在加载...</td></tr>
+            </tbody>
+        </table>
+
+        <div class="pager">
+            <button class="btn plain mini" id="btn-prev">上一页</button>
+            <button class="btn plain mini" id="btn-next">下一页</button>
+            <span id="page-info">-</span>
+            <span class="spacer"></span>
+            <span id="total-info"></span>
+        </div>
+    </div>
+
+    <!-- 四、关键词词云 -->
+    <div class="card">
+        <h2>关键词词云</h2>
+        <div id="wordcloud"></div>
+    </div>
+
+</div>
+
+<!-- ECharts 和词云插件从 CDN 加载；加载不出来的话，script.js 会自动换成文字大小表示词频 -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+</html>

@@ -1,0 +1,463 @@
+/* 社交媒体谣言检测系统 - 样式表
+   界面以简洁为主，主要靠自己写的 CSS，没有引 Bootstrap 之类的框架，
+   好处是文件小、答辩时讲得清楚每一块是干什么的。 */
+
+/* ---------- 基础 ---------- */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background: #f2f4f7;
+    color: #2b2f36;
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+a {
+    color: #2f6fed;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* 页面内容宽度限制一下，屏幕再宽也不会拉得太散 */
+.wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 16px 40px;
+}
+
+/* ---------- 顶部标题栏 ---------- */
+.topbar {
+    background: #2f6fed;
+    color: #fff;
+    padding: 18px 0;
+    margin-bottom: 20px;
+}
+
+.topbar .wrap {
+    padding-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.topbar h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.topbar .sub {
+    font-size: 13px;
+    opacity: 0.85;
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+    background: #fff;
+    border: 1px solid #e3e6ec;
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+
+.card h2 {
+    margin: 0 0 14px;
+    font-size: 16px;
+    font-weight: 600;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eef0f4;
+}
+
+/* ---------- 统计卡片 ---------- */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.stat {
+    background: #fff;
+    border: 1px solid #e3e6ec;
+    border-radius: 6px;
+    padding: 14px 16px;
+}
+
+.stat .num {
+    font-size: 26px;
+    font-weight: 600;
+    color: #2f6fed;
+    line-height: 1.2;
+}
+
+.stat .label {
+    font-size: 13px;
+    color: #79808c;
+    margin-top: 4px;
+}
+
+.stat.warn .num {
+    color: #e2574c;
+}
+
+/* ---------- 表单控件 ---------- */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.field label {
+    font-size: 12px;
+    color: #79808c;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid #d3d8e0;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #2b2f36;
+    background: #fff;
+    outline: none;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus {
+    border-color: #2f6fed;
+}
+
+input[type="text"] {
+    width: 220px;
+}
+
+input[type="number"] {
+    width: 90px;
+}
+
+.btn {
+    height: 34px;
+    padding: 0 16px;
+    border: 1px solid #2f6fed;
+    border-radius: 4px;
+    background: #2f6fed;
+    color: #fff;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.btn:hover {
+    background: #245fd6;
+}
+
+.btn.plain {
+    background: #fff;
+    color: #4a5160;
+    border-color: #d3d8e0;
+}
+
+.btn.plain:hover {
+    background: #f4f6fa;
+}
+
+.btn.danger {
+    background: #e2574c;
+    border-color: #e2574c;
+}
+
+.btn.danger:hover {
+    background: #cc473d;
+}
+
+.btn.success {
+    background: #1f9d64;
+    border-color: #1f9d64;
+}
+
+.btn.success:hover {
+    background: #1a8756;
+}
+
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* 表格里的小按钮 */
+.btn.mini {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+/* ---------- 标签页 ---------- */
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e3e6ec;
+    margin-bottom: 14px;
+    padding: 0;
+}
+
+.tab {
+    padding: 8px 16px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    font-size: 14px;
+    color: #5b6472;
+    margin-bottom: -1px;
+    background: none;
+    font-family: inherit;
+}
+
+.tab.active {
+    background: #fff;
+    border-color: #e3e6ec;
+    color: #2f6fed;
+    font-weight: 600;
+}
+
+/* ---------- 表格 ---------- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th, td {
+    text-align: left;
+    padding: 9px 10px;
+    border-bottom: 1px solid #eef0f4;
+    vertical-align: middle;
+}
+
+th {
+    background: #f7f9fc;
+    color: #5b6472;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+tbody tr:hover {
+    background: #fafbfe;
+}
+
+td.text-cell {
+    max-width: 420px;
+}
+
+td.nowrap {
+    white-space: nowrap;
+}
+
+/* ---------- 状态与概率 ---------- */
+.tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.tag.pending {
+    background: #fdf0dd;
+    color: #b97708;
+}
+
+.tag.detected {
+    background: #e5efff;
+    color: #2f6fed;
+}
+
+.tag.verified {
+    background: #e3f5ec;
+    color: #1f9d64;
+}
+
+.tag.rumor {
+    background: #fde8e6;
+    color: #cc473d;
+}
+
+.tag.normal {
+    background: #e3f5ec;
+    color: #1f9d64;
+}
+
+/* 概率列：百分比文字 + 一条小进度条 */
+.prob {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 130px;
+}
+
+.prob .bar {
+    flex: 1;
+    height: 6px;
+    background: #eef0f4;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.prob .bar span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: #1f9d64;
+}
+
+.prob.high .bar span {
+    background: #e2574c;
+}
+
+.prob .val {
+    width: 46px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 分页 ---------- */
+.pager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    font-size: 13px;
+    color: #5b6472;
+}
+
+.pager .spacer {
+    flex: 1;
+}
+
+/* ---------- 词云 ---------- */
+#wordcloud {
+    width: 100%;
+    height: 340px;
+}
+
+/* echarts 加载不出来时的兜底：拿字号大小表示词频 */
+.cloud-fallback {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: baseline;
+    padding: 10px 4px;
+}
+
+.cloud-fallback span {
+    color: #2f6fed;
+    line-height: 1.2;
+}
+
+/* ---------- 详情页 ---------- */
+.detail-text {
+    font-size: 16px;
+    line-height: 1.9;
+    padding: 14px 16px;
+    background: #f7f9fc;
+    border: 1px solid #eef0f4;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.detail-meta {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 24px;
+    margin-top: 16px;
+}
+
+.detail-meta .item {
+    font-size: 14px;
+}
+
+.detail-meta .item .k {
+    color: #79808c;
+    display: inline-block;
+    width: 76px;
+}
+
+.detail-img {
+    max-width: 100%;
+    margin-top: 12px;
+    border-radius: 4px;
+    border: 1px solid #eef0f4;
+}
+
+.actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* 校验/检测后的提示条 */
+.notice {
+    margin-top: 14px;
+    padding: 9px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: none;
+}
+
+.notice.show {
+    display: block;
+}
+
+.notice.ok {
+    background: #e3f5ec;
+    color: #1a8756;
+}
+
+.notice.err {
+    background: #fde8e6;
+    color: #cc473d;
+}
+
+/* ---------- 空数据提示 ---------- */
+.empty {
+    text-align: center;
+    color: #9aa1ad;
+    padding: 34px 0;
+    font-size: 14px;
+}
+
+/* ---------- 小屏幕适配 ---------- */
+@media (max-width: 880px) {
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .detail-meta {
+        grid-template-columns: 1fr;
+    }
+
+    td.text-cell {
+        max-width: 220px;
+    }
+}

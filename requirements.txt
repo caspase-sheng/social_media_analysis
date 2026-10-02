@@ -1,0 +1,9 @@
+flask
+flask-sqlalchemy
+pymysql
+jieba
+scikit-learn
+pandas
+requests
+beautifulsoup4
+lxml

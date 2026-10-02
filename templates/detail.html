@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>消息详情 - 社交媒体谣言检测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<!-- raw_id 从 URL 带过来，脚本拿它去调 /api/message/<id> -->
+<body data-page="detail" data-id="{{ raw_id }}">
+
+<div class="topbar">
+    <div class="wrap">
+        <h1>消息详情</h1>
+        <div class="sub"><a href="/" style="color:#fff;">&larr; 返回列表</a></div>
+    </div>
+</div>
+
+<div class="wrap">
+
+    <div class="card">
+        <h2>消息内容</h2>
+
+        <div class="detail-text" id="detail-text">正在加载...</div>
+        <img class="detail-img" id="detail-image" src="" alt="" style="display:none;">
+
+        <div class="detail-meta">
+            <div class="item"><span class="k">ID</span><span id="m-id">-</span></div>
+            <div class="item"><span class="k">来源</span><span id="m-source">-</span></div>
+            <div class="item"><span class="k">发布时间</span><span id="m-time">-</span></div>
+            <div class="item"><span class="k">处理状态</span><span id="m-status">-</span></div>
+            <div class="item"><span class="k">人工性质</span><span id="m-nature">-</span></div>
+            <div class="item"><span class="k">校验时间</span><span id="m-pvtime">-</span></div>
+        </div>
+
+        <div class="detail-meta">
+            <div class="item">
+                <span class="k">谣言概率</span>
+                <span class="prob" id="m-prob" style="display:inline-flex;width:240px;vertical-align:middle;">
+                    <span class="bar"><span id="m-prob-bar" style="width:0;"></span></span>
+                    <span class="val" id="m-prob-val">-</span>
+                </span>
+            </div>
+            <div class="item"><span class="k">命中关键词</span><span id="m-keywords">-</span></div>
+        </div>
+
+        <!-- 检测 / 校验的提示信息 -->
+        <div class="notice" id="notice"></div>
+
+        <!-- 两个模块的操作：服务器检测、人工校验 -->
+        <div class="actions">
+            <button class="btn" id="btn-detect">服务器检测</button>
+            <span style="color:#9aa1ad;font-size:13px;line-height:34px;">人工校验：</span>
+            <button class="btn danger" id="btn-rumor">判为谣言</button>
+            <button class="btn success" id="btn-normal">判为非谣言</button>
+        </div>
+    </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
