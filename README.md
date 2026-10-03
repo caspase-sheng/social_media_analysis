@@ -3,8 +3,9 @@
 大三课程项目《谣言检测界面设计》。用 Flask + MySQL + scikit-learn 做了一个可以演示的网页系统，
 包含数据展示、服务器检测结果呈现、人工校验、关键字搜索四个模块。
 
-爬虫部分同时写了真实抓取和模拟数据兜底两套逻辑，答辩的时候就算校园网访问不了外网，
-也能用本地 CSV 把整个流程跑完。
+爬虫部分同时写了真实抓取和模拟数据兜底两套逻辑：真实抓取接了今日头条、百度、腾讯、
+新浪、澎湃、中新网六个公开的新闻热榜和滚动页，不用登录就能抓；答辩的时候就算校园网
+访问不了外网，也能用本地 CSV 把整个流程跑完。
 
 ## 一、目录结构
 
@@ -139,10 +140,19 @@ python init_db.py
 按顺序执行下面几条命令（都在项目目录下、已激活环境的前提下）：
 
 ```bat
-python spider.py          # 抓数据，抓不到就自动读 data/sample_data.csv
+python spider.py          # 抓六个新闻源的数据，抓不到就自动读 data/sample_data.csv
 python preprocess.py      # 清洗、去重、分词、算 TF-IDF
 python train_model.py     # 训练模型，结果保存到 models/
 ```
+
+`train_model.py` 的训练样本有三个来源：`data/sample_data.csv` 里 50 条人工标注数据、
+数据库里已经人工校验过的记录，以及爬虫抓来的新闻正文。第三条是按“热榜和滚动页的新闻
+是媒体发布的真实信息”这个假设，把来源属于 `config.NEWS_SOURCES` 的消息统一当成非谣言。
+不想要这个假设就加 `--no-news` 参数。
+
+加进去的原因是：词表只由训练样本构成，如果只用那几十条模拟数据，真实新闻里的词模型
+一个都没见过，特征向量全为 0，逻辑回归只能输出一个常数，界面上就会看到一大批消息的
+概率都挤在 49.6% 这种同一个值上。把新闻正文纳入训练以后词表覆盖了新闻用词，概率才有区分度。
 
 想试 LSTM 的话再跑：
 
@@ -187,6 +197,7 @@ D:\conda\envs\rumor_detection\python.exe app.py
 | GET | `/api/messages` | 分页获取未处理消息 |
 | GET | `/api/message/<id>` | 单条消息详情 |
 | POST | `/api/detect/<id>` | 对单条消息做检测，返回谣言概率 |
+| POST | `/api/detect-all` | 一键检测：把所有没人工校验的消息重跑一遍 |
 | POST | `/api/verify/<id>` | 人工校验，参数 nature（谣言 / 非谣言） |
 | GET | `/api/processed` | 已处理消息列表 |
 | GET | `/api/keywords` | 词云数据 |
@@ -194,6 +205,14 @@ D:\conda\envs\rumor_detection\python.exe app.py
 
 所有接口返回的结构统一是 `{"code": 0, "msg": "提示文字", "data": {...}}`，
 `code` 为 0 表示成功，非 0 表示出错，原因写在 `msg` 里。
+
+`/api/messages`、`/api/processed`、`/api/search` 都支持一个 `sort` 参数，取值
+`time_desc`（发布时间从新到旧，默认）、`time_asc`（发布时间从旧到新）、
+`prob_desc`（谣言概率从高到低），传了别的值按默认排序处理。
+
+列表页标签行右边有个“一键检测”按钮，走的就是 `/api/detect-all`：
+把所有还没人工校验的消息重新跑一遍当前模型。模型重训过以后旧概率会失准，
+用这个按钮刷一遍就行，已经人工校验过的消息不会被覆盖。
 
 ## 八、遇到问题
 

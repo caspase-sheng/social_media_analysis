@@ -2,10 +2,21 @@
 """
 模型训练脚本：TF-IDF + 逻辑回归。
 
-训练数据有两个来源，合并起来用：
-1. data/sample_data.csv 里 50 条人工标注的数据（nature 列当标签）；
+训练数据有三个来源，合并起来用：
+1. data/sample_data.csv 里 50 条人工标注的数据（nature 列当标签），正类样本主要靠它；
 2. 数据库 processed_messages 里已经人工校验过的记录——这是"人在用系统"产生的反馈，
-   校验得越多，模型越接近我们自己的判断标准。
+   校验得越多，模型越接近我们自己的判断标准；
+3. 数据库 raw_messages 里爬虫抓来的新闻，按"非谣言"参与训练。
+
+第 3 条是补词表用的。一开始只用前两个来源，样本全是 50 条模拟数据，词表也就只覆盖那
+50 条里出现过的词。真实新闻（亚运会、铜牌、报价这些）的词它一个都没见过，TF-IDF 向量
+全为 0，逻辑回归算出来就是截距那一个常数，界面上表现为一大批消息概率都挤在 49.6%。
+把新闻正文加进来以后，词表覆盖了新闻用词，概率才有高低区分。
+
+这里有个明确的假设：我们按"热榜和滚动页的新闻是媒体机构发布的真实信息"把来源属于
+config.NEWS_SOURCES 的消息统一当作非谣言。它不是人工标注，所以只用于训练，
+不写进 raw_messages.nature（界面上看到的"人工性质"仍然是人工校验出来的结果）。
+不需要这个假设时用 --no-news 关掉。
 
 流程：读数据 -> 分词（复用 preprocess，保证和线上预测一致）-> TF-IDF -> 逻辑回归
       -> 交叉验证 + 测试集评估 -> 模型存到 models/ 下。
@@ -13,7 +24,8 @@
 用法：
     python train_model.py                正常训练
     python train_model.py --test-size 0.2  调整测试集比例
-    python train_model.py --csv-only      只用 CSV 训练（不看库里的人工校验数据）
+    python train_model.py --csv-only      只用 CSV 训练（不看库里的数据）
+    python train_model.py --no-news       不把爬虫抓的新闻当非谣言样本
 """
 
 import argparse
@@ -41,12 +53,13 @@ LABEL_MAP = {
 LABEL_NAME = {1: "谣言", 0: "非谣言"}
 
 
-def load_training_data(use_db=True):
+def load_training_data(use_db=True, use_news=True):
     """
     收集训练样本，返回 (文本列表, 标签列表)。
 
-    CSV 那边用 nature 列当标签；数据库那边取人工校验过的记录。
-    两条来源有重复的正文会去重（CSV 导入库以后，人工再校验可能会撞上）。
+    CSV 那边用 nature 列当标签；数据库那边取人工校验过的记录；
+    爬虫抓来的新闻按非谣言算（理由见文件开头的说明）。
+    几条来源之间重复的正文会去重。
     """
     texts, labels = [], []
     seen = set()
@@ -79,10 +92,25 @@ def load_training_data(use_db=True):
         except Exception as e:
             # 数据库连不上也不该让训练整个跑不起来，CSV 那部分还能用
             print("[警告] 读数据库里的标注数据失败：{0}".format(e))
-            print("        本次只用 CSV 的数据训练。")
+            print("        本次只跳过这部分数据。")
 
-    print("训练样本来源：CSV {0} 条，数据库人工校验 {1} 条，合计 {2} 条".format(
-        csv_count, db_count, len(texts)))
+    # 来源三：爬虫抓来的新闻，统一按非谣言
+    news_count = 0
+    if use_news:
+        try:
+            for text in database.get_news_samples_from_db(config.NEWS_SOURCES):
+                text = (text or "").strip()
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                texts.append(text)
+                labels.append(LABEL_MAP[database.NATURE_NORMAL])
+                news_count += 1
+        except Exception as e:
+            print("[警告] 读爬虫新闻样本失败：{0}".format(e))
+
+    print("训练样本来源：CSV {0} 条，人工校验 {1} 条，爬虫新闻（按非谣言）{2} 条，合计 {3} 条".format(
+        csv_count, db_count, news_count, len(texts)))
     return texts, labels
 
 
@@ -126,7 +154,9 @@ def evaluate(model, x_test, y_test):
     print("  真实非谣言    {0:<9}{1}".format(cm[1][0], cm[1][1]))
 
     print("\n分类报告：")
-    print(classification_report(y_test, y_pred,
+    # labels 必须显式写成 [1, 0]，否则 sklearn 默认按 0/1 排序，
+    # 会把 target_names 里的“谣言”对应到标签 0 上，指标全错行
+    print(classification_report(y_test, y_pred, labels=[1, 0],
                                 target_names=["谣言", "非谣言"], zero_division=0))
     return acc, f1
 
@@ -165,6 +195,8 @@ def main():
     parser = argparse.ArgumentParser(description="训练谣言检测模型")
     parser.add_argument("--test-size", type=float, default=0.3, help="测试集比例，默认 0.3")
     parser.add_argument("--csv-only", action="store_true", help="只用 CSV 数据训练")
+    parser.add_argument("--no-news", action="store_true",
+                        help="不把爬虫抓的新闻当非谣言样本")
     parser.add_argument("--top-n", type=int, default=15, help="打印多少个特征词")
     args = parser.parse_args()
 
@@ -173,7 +205,8 @@ def main():
     print("=" * 60)
 
     # 第一步：准备数据
-    texts, labels = load_training_data(use_db=not args.csv_only)
+    texts, labels = load_training_data(use_db=not args.csv_only,
+                                       use_news=not args.no_news)
     if not check_data(texts, labels):
         return 1
 

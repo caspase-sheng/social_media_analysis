@@ -240,6 +240,14 @@ input[type="number"] {
     font-weight: 600;
 }
 
+/* 标签行最右边的“一键检测”按钮，用 margin-left:auto 推到右边 */
+.tabs .tab-action {
+    margin-left: auto;
+    align-self: center;
+    height: 30px;
+    padding: 0 14px;
+}
+
 /* ---------- 表格 ---------- */
 table {
     width: 100%;
@@ -360,6 +368,13 @@ td.nowrap {
     height: 340px;
 }
 
+/* 词云上方那行提示：告诉用户词可以点 */
+.cloud-tip {
+    margin: 2px 0 8px;
+    font-size: 13px;
+    color: #79808c;
+}
+
 /* echarts 加载不出来时的兜底：拿字号大小表示词频 */
 .cloud-fallback {
     display: flex;
@@ -372,6 +387,19 @@ td.nowrap {
 .cloud-fallback span {
     color: #2f6fed;
     line-height: 1.2;
+}
+
+/* 兜底模式下的词也能点，鼠标移上去给点反馈 */
+.cloud-fallback .cloud-word {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 2px;
+    transition: background .15s, color .15s;
+}
+
+.cloud-fallback .cloud-word:hover {
+    background: #2f6fed;
+    color: #fff;
 }
 
 /* ---------- 详情页 ---------- */

@@ -14,6 +14,7 @@ Flask 主程序。
     GET  /api/messages         原始消息列表（默认只看没人工校验过的）
     GET  /api/message/<id>     单条消息详情
     POST /api/detect/<id>      服务器检测：跑模型，写回概率和关键词
+    POST /api/detect-all       一键检测：把所有未人工校验的消息重新跑一遍
     POST /api/verify/<id>      人工校验：提交谣言 / 非谣言
     GET  /api/processed        已处理文本列表
     GET  /api/keywords         关键词（词云数据源）
@@ -23,6 +24,8 @@ Flask 主程序。
     {"code": 0, "msg": "提示文字", "data": {...}}
 code=0 表示正常，非 0 表示出错，msg 里写清楚原因。
 """
+
+import time
 
 from flask import Flask, jsonify, render_template, request
 
@@ -87,6 +90,17 @@ def arg_str(name, default=None):
     return value if value else default
 
 
+def arg_sort():
+    """
+    取排序参数。
+
+    取值见 database.SORT_CHOICES：time_desc（发布时间倒序，默认）、
+    time_asc（发布时间正序）、prob_desc（谣言概率倒序）。
+    传了不认识的值不报错，按默认排序处理。
+    """
+    return database.normalize_sort(arg_str("sort"))
+
+
 def body_params():
     """
     把 POST 请求的参数统一取出来。
@@ -97,6 +111,23 @@ def body_params():
     if request.is_json:
         return request.get_json(silent=True) or {}
     return request.form.to_dict()
+
+
+def body_threshold():
+    """
+    从请求体里取判定阈值，取不到或者不合法就用 config.RUMOR_THRESHOLD。
+
+    单条检测和批量检测都要做这件事，抽出来避免两处各写一遍。
+    """
+    value = body_params().get("threshold")
+    if value in (None, ""):
+        return config.RUMOR_THRESHOLD
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return config.RUMOR_THRESHOLD
+    # 阈值必须落在 0~1，填 5 这种明显是手滑，直接按默认值来
+    return value if 0 <= value <= 1 else config.RUMOR_THRESHOLD
 
 
 def parse_page_params():
@@ -168,6 +199,7 @@ def api_messages():
         max_prob      谣言概率上限
         nature        性质：谣言 / 非谣言
         only_pending  传 1 表示只看还没人工校验的（未处理 + 已检测）
+        sort          排序方式：time_desc（默认）/ time_asc / prob_desc
 
     返回：{list: [...], total: 总条数, page: 当前页, page_size: 每页条数}
     """
@@ -184,11 +216,13 @@ def api_messages():
             max_prob=arg_float("max_prob"),
             nature=arg_str("nature"),
             only_pending=only_pending,
+            sort=arg_sort(),
         )
     except Exception as e:
         return fail("消息查询失败：{0}".format(e))
 
-    return ok({"list": rows, "total": total, "page": page, "page_size": page_size})
+    return ok({"list": rows, "total": total, "page": page, "page_size": page_size,
+               "sort": arg_sort()})
 
 
 @app.route("/api/message/<int:raw_id>")
@@ -219,6 +253,7 @@ def api_processed():
         page_size  每页条数
         nature     只看谣言 / 非谣言
         keyword    正文关键词
+        sort       排序方式：time_desc（默认，按处理时间倒序）/ time_asc / prob_desc
 
     返回：{list, total, page, page_size}
     """
@@ -229,11 +264,13 @@ def api_processed():
             page_size=page_size,
             nature=arg_str("nature"),
             keyword=arg_str("keyword"),
+            sort=arg_sort(),
         )
     except Exception as e:
         return fail("已处理文本查询失败：{0}".format(e))
 
-    return ok({"list": rows, "total": total, "page": page, "page_size": page_size})
+    return ok({"list": rows, "total": total, "page": page, "page_size": page_size,
+               "sort": arg_sort()})
 
 
 @app.route("/api/keywords")
@@ -269,6 +306,7 @@ def api_search():
         nature             谣言 / 非谣言
         include_processed  传 1（默认）连已处理一起搜，传 0 只搜在流转中的
         page / page_size   分页
+        sort               排序方式：time_desc（默认）/ time_asc / prob_desc
 
     返回：{list, total, page, page_size, keyword}，把关键词也回传一份，
     前端展示“搜索 xx 的结果”时用。
@@ -286,6 +324,7 @@ def api_search():
             page=page,
             page_size=page_size,
             include_processed=include_processed,
+            sort=arg_sort(),
         )
     except Exception as e:
         return fail("搜索失败：{0}".format(e))
@@ -296,6 +335,7 @@ def api_search():
         "page": page,
         "page_size": page_size,
         "keyword": keyword or "",
+        "sort": arg_sort(),
     })
 
 
@@ -315,18 +355,7 @@ def api_detect(raw_id):
     做的事：读出正文 -> predict.predict_text 算概率 -> 写回 raw_messages。
     返回：{prob, prob_text, label, keywords, is_rumor, threshold}
     """
-    params = body_params()
-    threshold = params.get("threshold")
-    if threshold in (None, ""):
-        threshold = config.RUMOR_THRESHOLD
-    else:
-        # 阈值必须落在 0~1，填 5 这种明显是手滑，直接按默认值来
-        try:
-            threshold = float(threshold)
-            if not 0 <= threshold <= 1:
-                threshold = config.RUMOR_THRESHOLD
-        except (TypeError, ValueError):
-            threshold = config.RUMOR_THRESHOLD
+    threshold = body_threshold()
 
     row = database.get_raw_message(raw_id)
     if row is None:
@@ -350,6 +379,37 @@ def api_detect(raw_id):
     result["threshold"] = threshold
     result["id"] = raw_id
     return ok(result, msg="检测完成")
+
+
+@app.route("/api/detect-all", methods=["POST"])
+def api_detect_all():
+    """
+    一键检测：把所有还没人工校验的消息重新跑一遍模型。
+
+    参数：
+        请求体可选传 threshold，不传就用 config.RUMOR_THRESHOLD。
+
+    和单条检测的区别：这里是"重跑"，已经检测过的消息也用当前模型再算一次。
+    模型重训过以后旧概率会失准，需要用这个接口刷一遍。
+    已经人工校验过的消息不动，人工结论优先级最高。
+
+    返回：{ok: 成功条数, fail: 失败条数, total: 总条数, elapsed: 耗时秒数}
+    """
+    threshold = body_threshold()
+    start = time.time()
+    try:
+        ok_count, fail_count = predict.detect_pending_messages(
+            threshold=threshold, recheck=True)
+    except predict.ModelNotReady as e:
+        return fail("模型还没准备好：{0}".format(e), code=500)
+    except Exception as e:
+        return fail("批量检测出错：{0}".format(e), code=500)
+
+    total = ok_count + fail_count
+    elapsed = round(time.time() - start, 2)
+    return ok(
+        {"ok": ok_count, "fail": fail_count, "total": total, "elapsed": elapsed},
+        msg="已检测 {0} 条，用时 {1} 秒".format(ok_count, elapsed))
 
 
 @app.route("/api/verify/<int:raw_id>", methods=["POST"])

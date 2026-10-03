@@ -58,6 +58,14 @@
                     <option value="非谣言">非谣言</option>
                 </select>
             </div>
+            <div class="field">
+                <label for="sort">排序方式</label>
+                <select id="sort">
+                    <option value="time_desc">发布时间：新到旧</option>
+                    <option value="time_asc">发布时间：旧到新</option>
+                    <option value="prob_desc">谣言概率：高到低</option>
+                </select>
+            </div>
             <button class="btn" id="btn-search">搜索</button>
             <button class="btn plain" id="btn-reset">重置</button>
         </div>
@@ -68,6 +76,8 @@
         <div class="tabs">
             <button class="tab active" data-tab="pending">消息列表</button>
             <button class="tab" data-tab="processed">已处理文本</button>
+            <!-- 一键检测：把所有没人工校验过的消息重新跑一遍模型 -->
+            <button class="btn tab-action" id="btn-detect-all">一键检测</button>
         </div>
 
         <table>
@@ -96,9 +106,10 @@
         </div>
     </div>
 
-    <!-- 四、关键词词云 -->
+    <!-- 四、关键词词云：点词可以筛选消息 -->
     <div class="card">
         <h2>关键词词云</h2>
+        <div class="cloud-tip">点击下面任意一个关键词，会自动筛选出包含这个词的消息</div>
         <div id="wordcloud"></div>
     </div>
 

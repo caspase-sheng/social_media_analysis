@@ -106,7 +106,8 @@ const listState = {
     page: 1,
     keyword: '',
     minProb: '',
-    nature: ''
+    nature: '',
+    sort: 'time_desc' // 排序方式，取值和后端 database.SORT_CHOICES 一致
 };
 
 // 两种标签页的表头不一样，切换的时候整行替换
@@ -141,6 +142,7 @@ function buildQuery(extra) {
     if (listState.keyword) { params.set('keyword', listState.keyword); }
     if (listState.minProb !== '') { params.set('min_prob', listState.minProb); }
     if (listState.nature) { params.set('nature', listState.nature); }
+    if (listState.sort) { params.set('sort', listState.sort); }
     if (extra) {
         Object.keys(extra).forEach(function (k) { params.set(k, extra[k]); });
     }
@@ -221,6 +223,35 @@ function readFilters() {
     listState.keyword = document.getElementById('kw').value.trim();
     listState.minProb = document.getElementById('min-prob').value.trim();
     listState.nature = document.getElementById('nature').value;
+    listState.sort = document.getElementById('sort').value;
+}
+
+/** 切换标签页（消息列表 / 已处理文本）。 */
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(function (t) {
+        t.classList.toggle('active', t.dataset.tab === name);
+    });
+    listState.tab = name;
+    listState.page = 1;
+    loadList();
+}
+
+/**
+ * 点词云上的词之后：把词填进搜索框、切回消息列表、重新查询。
+ * 词云统计的是全部关键词，所以点击时会先把概率下限和性质清掉，
+ * 免得旧的筛选条件把这个词的结果过滤没了让人以为没查到。
+ */
+function filterByKeyword(word) {
+    if (!word) { return; }
+    document.getElementById('kw').value = word;
+    document.getElementById('min-prob').value = '';
+    document.getElementById('nature').value = '';
+    listState.keyword = word;
+    listState.minProb = '';
+    listState.nature = '';
+    switchTab('pending');
+    // 列表在上方，滚动过去让用户直接看到筛选结果
+    document.querySelector('#table-body').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /** 拉词云数据并画出来。 */
@@ -259,6 +290,7 @@ async function loadKeywords() {
             rotationRange: [0, 0],   // 词都横着放，斜着的字看起来累
             gridSize: 8,
             drawOutOfBound: false,
+            cursor: 'pointer',       // 鼠标移上去变成手型，提示这个词能点
             textStyle: {
                 fontFamily: 'Microsoft YaHei, sans-serif',
                 color: function () {
@@ -270,6 +302,10 @@ async function loadKeywords() {
             })
         }]
     });
+    // 点词去筛选消息
+    chart.on('click', function (params) {
+        filterByKeyword(params.name);
+    });
     window.addEventListener('resize', function () { chart.resize(); });
 }
 
@@ -280,7 +316,8 @@ function renderTagCloud(box, list) {
     const html = list.map(function (item) {
         const ratio = max === min ? 1 : (item.frequency - min) / (max - min);
         const size = 14 + Math.round(ratio * 24);
-        return '<span style="font-size:' + size + 'px;" title="出现 ' + item.frequency + ' 次">' +
+        return '<span class="cloud-word" style="font-size:' + size + 'px;" ' +
+            'title="出现 ' + item.frequency + ' 次，点击筛选" data-word="' + escapeHtml(item.word) + '">' +
             escapeHtml(item.word) + '</span>';
     }).join('');
     box.innerHTML = '<div class="cloud-fallback">' + html + '</div>';
@@ -303,7 +340,41 @@ function initIndexPage() {
         document.getElementById('kw').value = '';
         document.getElementById('min-prob').value = '';
         document.getElementById('nature').value = '';
+        document.getElementById('sort').value = 'time_desc';
         readFilters();
+        listState.page = 1;
+        loadList();
+    });
+
+    // 一键检测：把所有没人工校验的消息重新跑一遍模型。
+    // 消息多的时候要跑几秒，所以先确认一下，跑的过程中按钮禁用防止重复点。
+    document.getElementById('btn-detect-all').addEventListener('click', async function () {
+        if (!confirm('将对所有还没人工校验的消息重新跑一遍检测，确定继续吗？')) {
+            return;
+        }
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = '检测中...';
+        try {
+            const data = await apiPost('/api/detect-all', {});
+            alert('检测完成：成功 ' + data.ok + ' 条，失败 ' + data.fail +
+                ' 条，用时 ' + data.elapsed + ' 秒');
+            listState.page = 1;
+            // 概率、状态、命中的关键词都变了，列表和词云一起刷新
+            await loadList();
+            loadOverview();
+            loadKeywords();
+        } catch (err) {
+            alert('一键检测失败：' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '一键检测';
+        }
+    });
+
+    // 排序方式改了立即重新查，不用再点搜索
+    document.getElementById('sort').addEventListener('change', function () {
+        listState.sort = this.value;
         listState.page = 1;
         loadList();
     });
@@ -318,12 +389,17 @@ function initIndexPage() {
     // 切标签页
     document.querySelectorAll('.tab').forEach(function (tab) {
         tab.addEventListener('click', function () {
-            document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
-            tab.classList.add('active');
-            listState.tab = tab.dataset.tab;
-            listState.page = 1;
-            loadList();
+            readFilters();   // 切页前先收一下当前的筛选条件
+            switchTab(tab.dataset.tab);
         });
+    });
+
+    // 词云兜底模式（ECharts 没加载出来）下点词筛选，用事件委托
+    document.getElementById('wordcloud').addEventListener('click', function (e) {
+        const span = e.target.closest('.cloud-word');
+        if (span) {
+            filterByKeyword(span.dataset.word);
+        }
     });
 
     // 翻页
@@ -347,9 +423,10 @@ function initIndexPage() {
         btn.disabled = true;
         btn.textContent = '检测中';
         try {
-            const result = await apiPost('/api/detect/' + id, {});
-            btn.textContent = result.prob_text;
-            // 检测完概率和状态都变了，统计数字也跟着刷新一下
+            await apiPost('/api/detect/' + id, {});
+            // 检测完概率和状态都变了，整表重新拉一次，概率列才会实时刷新；
+            // 不重拉的话行里显示的还是旧的“未检测”
+            await loadList();
             loadOverview();
         } catch (err) {
             btn.textContent = '失败';
@@ -396,21 +473,40 @@ function fillDetail(row) {
         img.style.display = 'none';
     }
 
-    // 已经人工处理过的消息，三个按钮都禁用，避免误点覆盖结果
+    // 人工校验过的消息允许改判：两个校验按钮始终可点，按钮文字跟着当前结论走，
+    // 用户一眼能看出再点一下会改成什么。已处理的消息不再允许重跑模型检测，
+    // 避免模型结果把人工结论盖掉。
     const verified = row.status === '已处理';
     document.getElementById('btn-detect').disabled = verified;
-    document.getElementById('btn-rumor').disabled = verified;
-    document.getElementById('btn-normal').disabled = verified;
+
+    const btnRumor = document.getElementById('btn-rumor');
+    const btnNormal = document.getElementById('btn-normal');
+    btnRumor.disabled = false;
+    btnNormal.disabled = false;
+
+    const label = document.getElementById('verify-label');
+    if (verified) {
+        label.textContent = '当前人工结论：' + (row.nature || '未定') + '，可改判为：';
+        btnRumor.textContent = row.nature === '谣言' ? '仍判为谣言' : '改为谣言';
+        btnNormal.textContent = row.nature === '非谣言' ? '仍判为非谣言' : '改为非谣言';
+    } else {
+        label.textContent = '人工校验：';
+        btnRumor.textContent = '判为谣言';
+        btnNormal.textContent = '判为非谣言';
+    }
 }
 
 /** 详情页的事件绑定。 */
 function initDetailPage() {
     const rawId = document.body.dataset.id;
     const notice = document.getElementById('notice');
+    // 记住这条消息当前的人工结论，用来判断这次点按钮是首次校验还是改判
+    let currentNature = null;
 
     async function reload() {
         try {
             const row = await apiGet('/api/message/' + rawId);
+            currentNature = row.nature || null;
             fillDetail(row);
         } catch (e) {
             document.getElementById('detail-text').textContent = '加载失败：' + e.message;
@@ -436,12 +532,20 @@ function initDetailPage() {
     // 两个校验按钮共用一段逻辑，只是性质不同
     function bindVerify(buttonId, nature) {
         document.getElementById(buttonId).addEventListener('click', async function () {
-            if (!confirm('确定把这条消息标记为「' + nature + '」吗？')) {
+            // 已经校验过的是改判，把旧结论也写进提示里，确认框说得更清楚
+            const tip = currentNature
+                ? '确定把这条消息的人工结论从「' + currentNature + '」改为「' + nature + '」吗？'
+                : '确定把这条消息标记为「' + nature + '」吗？';
+            if (!confirm(tip)) {
                 return;
             }
             try {
                 await apiPost('/api/verify/' + rawId, { nature: nature });
-                showNotice(notice, '已提交，这条消息标记为「' + nature + '」，并移入已处理文本。', true);
+                // 接口只返回这条消息的最新内容，提示文字在前端拼，区分首次校验和改判
+                const tip = currentNature
+                    ? '已改判：人工结论从「' + currentNature + '」改为「' + nature + '」。'
+                    : '已提交，这条消息标记为「' + nature + '」，并移入已处理文本。';
+                showNotice(notice, tip, true);
                 await reload();
             } catch (e) {
                 showNotice(notice, '提交失败：' + e.message, false);

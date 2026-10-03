@@ -145,19 +145,29 @@ def predict_batch(texts, threshold=None):
     return results
 
 
-def detect_pending_messages(limit=None, threshold=None):
+def detect_pending_messages(limit=None, threshold=None, recheck=False):
     """
-    把库里还没检测过的消息跑一遍，结果写回 raw_messages。
+    把库里还没人工校验过的消息跑一遍，结果写回 raw_messages。
+
+    recheck=False（默认）：只跑“未处理”的，已经检测过的不重复跑，适合第一次全量检测。
+    recheck=True：连“已检测”的一起重跑。模型重训以后概率会变，旧结果得用新模型刷一遍，
+    界面上那个“一键检测”按钮走的就是这条路。
+
+    两种模式都不碰已经人工校验过的消息（status=已处理），人工结论优先级最高。
 
     返回 (处理条数, 失败条数)。这个是给命令行用的；
     Flask 的接口是单条检测，逻辑一样，但走的是 predict_text + update_detect_result。
     """
     threshold = DEFAULT_THRESHOLD if threshold is None else float(threshold)
 
-    # 只取“未处理”的，已经检测过的不用重复跑
+    # only_pending=True 拿到的是“未处理 + 已检测”，也就是全部还没人工校验的
     rows, total = database.get_messages(page=1, page_size=limit or 10000,
                                         only_pending=True)
-    todo = [r for r in rows if r["status"] == database.STATUS_PENDING]
+    if recheck:
+        # 重跑模式：未处理和已检测的都要过一遍
+        todo = rows
+    else:
+        todo = [r for r in rows if r["status"] == database.STATUS_PENDING]
     if not todo:
         print("没有待检测的消息（库里未处理 0 条）。")
         return 0, 0
@@ -191,6 +201,8 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="批量检测最多处理多少条")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help="判定阈值，默认 0.5")
+    parser.add_argument("--recheck", action="store_true",
+                        help="连已检测的一起重跑，模型重训后用这个刷新旧概率")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -219,7 +231,8 @@ def main():
 
     # 批量检测模式
     try:
-        ok, fail = detect_pending_messages(args.limit, args.threshold)
+        ok, fail = detect_pending_messages(args.limit, args.threshold,
+                                           recheck=args.recheck)
     except ModelNotReady as e:
         print("[错误] {0}".format(e))
         return 1

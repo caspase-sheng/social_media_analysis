@@ -257,10 +257,39 @@ def count_messages(status=None):
         close_session()
 
 
-def get_messages(page=1, page_size=None, keyword=None, min_prob=None,
-                 max_prob=None, nature=None, only_pending=False):
+# 列表排序方式。前端下拉框里的三个选项就是这三个值，
+# 传别的值一律按默认的发布时间倒序处理，不让非法参数影响 SQL。
+SORT_TIME_DESC = "time_desc"   # 发布时间从新到旧（默认）
+SORT_TIME_ASC = "time_asc"     # 发布时间从旧到新
+SORT_PROB_DESC = "prob_desc"   # 谣言概率从高到低
+SORT_CHOICES = (SORT_TIME_DESC, SORT_TIME_ASC, SORT_PROB_DESC)
+
+
+def normalize_sort(sort):
+    """排序参数合法性检查，不认识的值按默认排序。"""
+    return sort if sort in SORT_CHOICES else SORT_TIME_DESC
+
+
+def build_order_by(sort, time_col, id_col, prob_col=None):
     """
-    按条件查询原始消息，按时间倒序分页返回。
+    把排序方式转成 order_by 的排序列。
+
+    每个分支都补一个 id 兜底：时间或概率相同的记录如果只按那一列排，
+    每次查询的顺序可能不一样，翻页时会看到重复或者漏掉的条目。
+    """
+    if sort == SORT_TIME_ASC:
+        return (time_col.asc(), id_col.asc())
+    if sort == SORT_PROB_DESC and prob_col is not None:
+        # 概率为空（还没检测）的记录，desc 排序时会自动落到最后
+        return (prob_col.desc(), id_col.desc())
+    return (time_col.desc(), id_col.desc())
+
+
+def get_messages(page=1, page_size=None, keyword=None, min_prob=None,
+                 max_prob=None, nature=None, only_pending=False,
+                 sort=SORT_TIME_DESC):
+    """
+    按条件查询原始消息，分页返回。
 
     参数说明（Flask 接口基本是一一对应的）：
       page         第几页，从 1 开始
@@ -270,6 +299,7 @@ def get_messages(page=1, page_size=None, keyword=None, min_prob=None,
       max_prob     谣言概率上限
       nature       性质筛选：谣言 / 非谣言
       only_pending True 表示只看还没人工校验的（未处理 + 已检测）
+      sort         排序方式，见 SORT_CHOICES，默认发布时间倒序
 
     返回 (数据列表, 总条数)。
     """
@@ -293,7 +323,8 @@ def get_messages(page=1, page_size=None, keyword=None, min_prob=None,
             query = query.filter(RawMessage.nature == nature)
 
         total = query.count()
-        rows = (query.order_by(RawMessage.timestamp.desc(), RawMessage.id.desc())
+        rows = (query.order_by(*build_order_by(sort, RawMessage.timestamp,
+                                               RawMessage.id, RawMessage.rumor_prob))
                      .offset((page - 1) * page_size)
                      .limit(page_size)
                      .all())
@@ -348,8 +379,11 @@ def verify_message(raw_id, nature):
     """
     人工校验一条消息。
 
-    干三件事：raw_messages 里写上性质和状态、processed_messages 里插一条新记录。
-    同一条消息重复点校验不会插两条（靠 raw_id 的唯一约束 + 先查后写处理）。
+    干三件事：raw_messages 里写上性质和状态、processed_messages 里写记录、
+    返回一句人话给前端显示。
+
+    已经校验过的消息可以改判（比如一开始点错了，从“非谣言”改成“谣言”），
+    这种情况更新原来那条记录，不会插出第二条——靠 raw_id 的唯一约束兜底。
     返回 (是否成功, 提示信息)。
     """
     if nature not in (NATURE_RUMOR, NATURE_NORMAL):
@@ -366,12 +400,17 @@ def verify_message(raw_id, nature):
         row.status = STATUS_VERIFIED
         row.processed_time = now
 
-        # 已经处理过的就更新原记录，不重复插
         exist = session.query(ProcessedMessage).filter(ProcessedMessage.raw_id == raw_id).first()
         if exist:
+            # 改判的情况：性质有变化就明确告诉用户改成了什么
+            old_nature = exist.nature
             exist.nature = nature
             exist.rumor_prob = row.rumor_prob
             exist.processed_time = now
+            if old_nature == nature:
+                msg = "已重新提交，人工结论仍是「{0}」".format(nature)
+            else:
+                msg = "已把人工结论从「{0}」改为「{1}」".format(old_nature or "未定", nature)
         else:
             session.add(ProcessedMessage(
                 raw_id=row.id,
@@ -381,9 +420,10 @@ def verify_message(raw_id, nature):
                 rumor_prob=row.rumor_prob,
                 processed_time=now,
             ))
+            msg = "校验完成，已标记为「{0}」并移入已处理文本".format(nature)
 
         session.commit()
-        return True, "校验完成，已移入已处理文本"
+        return True, msg
     except Exception as e:
         session.rollback()
         return False, "校验失败：{0}".format(e)
@@ -391,8 +431,14 @@ def verify_message(raw_id, nature):
         close_session()
 
 
-def get_processed_messages(page=1, page_size=None, nature=None, keyword=None):
-    """查已处理文本，按处理时间倒序分页。返回 (数据列表, 总条数)。"""
+def get_processed_messages(page=1, page_size=None, nature=None, keyword=None,
+                           sort=SORT_TIME_DESC):
+    """
+    查已处理文本，分页返回。
+
+    这里的“时间”是处理时间，不是消息的发布时间，因为已处理列表看的是
+    人工什么时候校验的。返回 (数据列表, 总条数)。
+    """
     page_size = page_size or config.PAGE_SIZE
     page = max(1, int(page or 1))
 
@@ -405,7 +451,9 @@ def get_processed_messages(page=1, page_size=None, nature=None, keyword=None):
             query = query.filter(ProcessedMessage.text.like("%{0}%".format(keyword)))
 
         total = query.count()
-        rows = (query.order_by(ProcessedMessage.processed_time.desc(), ProcessedMessage.id.desc())
+        rows = (query.order_by(*build_order_by(sort, ProcessedMessage.processed_time,
+                                               ProcessedMessage.id,
+                                               ProcessedMessage.rumor_prob))
                      .offset((page - 1) * page_size)
                      .limit(page_size)
                      .all())
@@ -482,6 +530,28 @@ def get_labeled_samples_from_db():
         close_session()
 
 
+def get_news_samples_from_db(news_sources):
+    """
+    取爬虫抓来的新闻正文，训练时按“非谣言”用。
+
+    背景：模型词表如果只由 50 条模拟数据构成，真实新闻里的词它一个都没见过，
+    特征向量全为 0，逻辑回归只能输出一个恒定值（界面上就表现为一大批 49.6%）。
+    把新闻正文纳入训练能补上这部分词汇。
+
+    只取还没人工校验过的（status != 已处理）：已经人工判过的以人工结论为准，
+    不在这里重复返回，免得同一个来源被算两次。
+    """
+    session = get_session()
+    try:
+        rows = (session.query(RawMessage.text)
+                .filter(RawMessage.source.in_(tuple(news_sources)))
+                .filter(RawMessage.status != STATUS_VERIFIED)
+                .all())
+        return [text for (text,) in rows if text]
+    finally:
+        close_session()
+
+
 # ============================================================
 # 五、关键词相关操作
 # ============================================================
@@ -538,12 +608,14 @@ def get_keywords(top_n=100, min_frequency=1):
 
 
 def search_messages(keyword=None, min_prob=None, max_prob=None, nature=None,
-                    page=1, page_size=None, include_processed=False):
+                    page=1, page_size=None, include_processed=False,
+                    sort=SORT_TIME_DESC):
     """
     关键字搜索模块用的查询。
 
     和 get_messages 的区别：这个会把已处理的也一起搜（可选），
     因为搜索模块是“查全部消息里跟这个词相关的”，不区分处理状态。
+    sort 和列表页共用同一套排序方式，默认发布时间倒序。
     """
     page_size = page_size or config.PAGE_SIZE
     page = max(1, int(page or 1))
@@ -567,7 +639,8 @@ def search_messages(keyword=None, min_prob=None, max_prob=None, nature=None,
             query = query.filter(RawMessage.nature == nature)
 
         total = query.count()
-        rows = (query.order_by(RawMessage.rumor_prob.desc(), RawMessage.timestamp.desc())
+        rows = (query.order_by(*build_order_by(sort, RawMessage.timestamp,
+                                               RawMessage.id, RawMessage.rumor_prob))
                      .offset((page - 1) * page_size)
                      .limit(page_size)
                      .all())
