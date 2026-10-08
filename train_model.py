@@ -8,11 +8,6 @@
    校验得越多，模型越接近我们自己的判断标准；
 3. 数据库 raw_messages 里爬虫抓来的新闻，按"非谣言"参与训练。
 
-第 3 条是补词表用的。一开始只用前两个来源，样本全是 50 条模拟数据，词表也就只覆盖那
-50 条里出现过的词。真实新闻（亚运会、铜牌、报价这些）的词它一个都没见过，TF-IDF 向量
-全为 0，逻辑回归算出来就是截距那一个常数，界面上表现为一大批消息概率都挤在 49.6%。
-把新闻正文加进来以后，词表覆盖了新闻用词，概率才有高低区分。
-
 这里有个明确的假设：我们按"热榜和滚动页的新闻是媒体机构发布的真实信息"把来源属于
 config.NEWS_SOURCES 的消息统一当作非谣言。它不是人工标注，所以只用于训练，
 不写进 raw_messages.nature（界面上看到的"人工性质"仍然是人工校验出来的结果）。
@@ -22,10 +17,10 @@ config.NEWS_SOURCES 的消息统一当作非谣言。它不是人工标注，所
       -> 交叉验证 + 测试集评估 -> 模型存到 models/ 下。
 
 用法：
-    python train_model.py                正常训练
+    python train_model.py                  正常训练
     python train_model.py --test-size 0.2  调整测试集比例
-    python train_model.py --csv-only      只用 CSV 训练（不看库里的数据）
-    python train_model.py --no-news       不把爬虫抓的新闻当非谣言样本
+    python train_model.py --csv-only       只用 CSV 训练（不看库里的数据）
+    python train_model.py --no-news        不把爬虫抓的新闻当非谣言样本
 """
 
 import argparse

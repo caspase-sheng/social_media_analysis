@@ -35,9 +35,12 @@ rumor_detection_project/
 └── docs/
     ├── 系统概述文档.md
     ├── 系统调研总结报告.md
+    ├── 七人分工表.md
+    ├── 接口约定.md
+    ├── 数据库约定.md
+    ├── 文件树约定.md
     ├── PPT大纲.md
     ├── 演示视频脚本.md
-    ├── 六人分工表.md
     └── 常见报错与解决.md
 ```
 
@@ -86,6 +89,8 @@ pandas
 requests
 beautifulsoup4
 lxml
+joblib
+numpy
 ```
 
 如果后面要跑 LSTM 那部分，再多装一个 PyTorch：
@@ -218,8 +223,3 @@ D:\conda\envs\rumor_detection\python.exe app.py
 
 数据库连不上、端口被占用、词云不显示这些常见毛病，
 都记在 `docs/常见报错与解决.md` 里了，先去那里翻一翻。
-
-## 九、说明
-
-这个项目是课程作业，目标是能跑通、能演示、能答辩，没有做权限管理和多用户，
-界面也是够用就行，没有花太多时间在样式上。
