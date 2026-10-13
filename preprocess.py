@@ -6,8 +6,8 @@
 拿出一份 TF-IDF 特征矩阵看看维度对不对。
 
 这里定义的几个函数不只本文件在用，train_model.py 和 predict.py 也会 import，
-所以分词规则统一放在这里，保证训练和线上预测的处理方式完全一致
-（这一点挺关键，之前我训练用了一套清洗、预测用另一套，结果线上效果比训练差很多）。
+所以分词规则统一放在这里，保证训练和线上预测的处理方式完全一致。
+
 """
 
 import re
@@ -58,7 +58,7 @@ def clean_text(text):
     text = RE_TOPIC.sub(r"\1", text)
     text = RE_EMOJI_TAG.sub(" ", text)
     text = text.replace("\u3000", " ").replace("\xa0", " ").replace("\u200b", "")
-    # 这行会把标点全干掉，中文标点也在内
+    # 把标点全干掉，中文标点也在内
     text = RE_SPECIAL.sub(" ", text)
     text = RE_MULTI_SPACE.sub(" ", text)
     return text.strip()
@@ -81,7 +81,7 @@ def cut_words(text, remove_stopwords=True, min_length=2):
         # 这样就算环境缺库，后续流程也不会因为维度对不上直接报错
         chars = [ch for ch in clean_text(text) if ch.strip()]
         return [ch for ch in chars
-                if len(ch) >= 1 and not ch.isdigit() and not (remove_stopwords and ch in config.STOP_WORDS)]
+                if min_length <= len(ch) and not ch.isdigit() and not (remove_stopwords and ch in config.STOP_WORDS)]
 
     words = jieba.lcut(clean_text(text))
 
@@ -133,7 +133,7 @@ def build_corpus(rows):
 
 def count_word_frequency(rows, top_n=100):
     """
-    统计全库词频，返回 Counter。
+    统计词频并截断到 top_n，返回 Counter。
 
     rows 传 [(id, text)] 就行，内部会自己分词。
     """
