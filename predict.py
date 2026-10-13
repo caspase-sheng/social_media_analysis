@@ -30,6 +30,10 @@ class ModelNotReady(Exception):
     """模型文件不存在或者加载失败时抛这个，调用方好区分是哪种错。"""
     pass
 
+def _backend():
+    """当前主模型类型。config 里没写就默认 lr，保证老代码也能跑。"""
+    return getattr(config, "MODEL_BACKEND", "lr").lower()
+
 
 def load_model(force_reload=False):
     """
@@ -58,23 +62,22 @@ def load_model(force_reload=False):
 
 
 def is_model_ready():
-    """模型文件在不在，app.py 启动时检查一下，好给个明确的提示。"""
-    return (os.path.exists(config.TFIDF_MODEL_PATH) and os.path.exists(config.LR_MODEL_PATH))
+    """按当前 backend 检查对应的模型文件在不在。"""
+    if _backend() == "lstm":
+        return (os.path.exists(config.LSTM_MODEL_PATH)
+                and os.path.exists(config.LSTM_VOCAB_PATH))
+    return (os.path.exists(config.TFIDF_MODEL_PATH)
+            and os.path.exists(config.LR_MODEL_PATH))
 
 
 def predict_text(text, threshold=None):
     """
-    预测单条文本。
+    预测单条文本。按 config.MODEL_BACKEND 分发到逻辑回归或 LSTM。
 
-    返回一个字典：
-      prob       谣言概率，0~1 的小数
-      label      判定结果：“谣言” / “非谣言”
-      prob_text  概率的百分数写法，前端直接显示这个，省得再算
-      keywords   对这次判断影响最大的几个词（线性模型能解释，下面说）
-      is_rumor   布尔值，方便接口里做判断
+    返回字典字段保持完全一致（prob / label / prob_text / keywords / is_rumor），
+    这样 app.py 和 predict.py 的调用方一行都不用改。
     """
     threshold = DEFAULT_THRESHOLD if threshold is None else float(threshold)
-    vectorizer, model = load_model()
 
     clean = preprocess.clean_text(text)
     if not clean:
@@ -84,8 +87,15 @@ def predict_text(text, threshold=None):
             "keywords": "", "is_rumor": False,
         }
 
+    if _backend() == "lstm":
+        return _predict_lstm(text, threshold)
+    return _predict_lr(text, threshold)
+
+
+def _predict_lr(text, threshold):
+    """逻辑回归分支：原来 predict_text 的算法，一字不改搬过来。"""
+    vectorizer, model = load_model()
     vec = vectorizer.transform([preprocess.cut_to_string(text)])
-    # predict_proba 返回 [非谣言概率, 谣言概率]，第 1 列才是我们要的
     prob = float(model.predict_proba(vec)[0][1])
     is_rumor = prob >= threshold
 
@@ -94,6 +104,42 @@ def predict_text(text, threshold=None):
         "label": database.NATURE_RUMOR if is_rumor else database.NATURE_NORMAL,
         "prob_text": "{0:.1f}%".format(prob * 100),
         "keywords": explain_keywords(vectorizer, model, vec, top_n=5),
+        "is_rumor": is_rumor,
+    }
+
+
+def _predict_lstm(text, threshold):
+    """
+    LSTM 分支。
+
+    模型和词表的加载、缓存都交给 train_lstm.load_lstm，
+    这里只负责把文本转成 id 序列、跑一次前向、拼出和逻辑回归同样结构的字典。
+    """
+    # 延迟导入，避免 predict <-> train_lstm 循环依赖
+    import train_lstm
+
+    try:
+        model, info = train_lstm.load_lstm()
+    except RuntimeError as e:
+        # train_lstm 抛的是 RuntimeError，统一转成 ModelNotReady，
+        # app.py 里的 except predict.ModelNotReady 才能接得住
+        raise ModelNotReady(str(e))
+
+    import torch
+    ids = train_lstm.text_to_ids(text, info["word2id"], info["max_len"])
+    with torch.no_grad():
+        prob = float(torch.sigmoid(model(torch.tensor([ids], dtype=torch.long)))[0])
+
+    is_rumor = prob >= threshold
+
+    # LSTM 没有可解释系数，关键词退化成“分词结果前 5 个”，仅供界面展示
+    keywords = ",".join(preprocess.cut_words(text)[:5])
+
+    return {
+        "prob": round(prob, 4),
+        "label": database.NATURE_RUMOR if is_rumor else database.NATURE_NORMAL,
+        "prob_text": "{0:.1f}%".format(prob * 100),
+        "keywords": keywords,
         "is_rumor": is_rumor,
     }
 
@@ -126,23 +172,11 @@ def explain_keywords(vectorizer, model, vec, top_n=5):
 
 
 def predict_batch(texts, threshold=None):
-    """批量预测，输入文本列表，返回结果列表。少一次模型加载，比一条条调快。"""
+    """
+    批量预测，输入文本列表，返回结果列表。
+    """
     threshold = DEFAULT_THRESHOLD if threshold is None else float(threshold)
-    vectorizer, model = load_model()
-
-    corpus = [preprocess.cut_to_string(t) for t in texts]
-    probs = model.predict_proba(vectorizer.transform(corpus))[:, 1]
-
-    results = []
-    for text, prob in zip(texts, probs):
-        prob = float(prob)
-        results.append({
-            "prob": round(prob, 4),
-            "label": database.NATURE_RUMOR if prob >= threshold else database.NATURE_NORMAL,
-            "prob_text": "{0:.1f}%".format(prob * 100),
-            "is_rumor": prob >= threshold,
-        })
-    return results
+    return [predict_text(t, threshold) for t in texts]
 
 
 def detect_pending_messages(limit=None, threshold=None, recheck=False):
@@ -210,8 +244,13 @@ def main():
     print("=" * 60)
 
     if not is_model_ready():
-        print("模型文件不存在，先跑 python train_model.py 训练。")
-        print("缺少的文件：{0}".format(config.LR_MODEL_PATH))
+        if _backend() == "lstm":
+            print("模型文件不存在，先跑 python train_lstm.py 训练 LSTM。")
+            print("缺少的文件：{0} / {1}".format(
+                config.LSTM_MODEL_PATH, config.LSTM_VOCAB_PATH))
+        else:
+            print("模型文件不存在，先跑 python train_model.py 训练。")
+            print("缺少的文件：{0}".format(config.LR_MODEL_PATH))
         return 1
 
     # 单条预测模式

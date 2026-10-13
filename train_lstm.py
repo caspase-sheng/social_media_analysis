@@ -235,8 +235,18 @@ def save_lstm(model, word2id):
 
 # ---------------- 预测 ----------------
 
-def load_lstm():
-    """加载 LSTM 和词表，返回 (模型, 词表信息)。"""
+# 模块级缓存，和 predict.py 里 _vectorizer / _model 是一个意思
+_lstm_model = None
+_lstm_info = None
+
+
+def load_lstm(force_reload=False):
+    """加载 LSTM 和词表，返回 (模型, 词表信息)。带缓存，进程内只读一次磁盘。"""
+    global _lstm_model, _lstm_info
+
+    if _lstm_model is not None and _lstm_info is not None and not force_reload:
+        return _lstm_model, _lstm_info
+
     if not HAS_TORCH:
         raise RuntimeError("没有安装 PyTorch，请先执行 pip install torch")
     for path in (config.LSTM_MODEL_PATH, config.LSTM_VOCAB_PATH):
@@ -247,21 +257,34 @@ def load_lstm():
     model = LSTMClassifier(info["vocab_size"], info["embed_dim"], info["hidden_dim"])
     model.load_state_dict(torch.load(config.LSTM_MODEL_PATH, weights_only=True))
     model.eval()
+
+    _lstm_model = model
+    _lstm_info = info
     return model, info
 
 
-def predict_lstm(text):
-    """对一条文本做 LSTM 预测，返回概率字典。字段和 predict.predict_text 保持一致。"""
-    model, info = load_lstm()
-    ids = text_to_ids(text, info["word2id"], info["max_len"])
+def predict_lstm(text, threshold=None):
+    """对一条文本做 LSTM 预测，返回字典。字段和 predict.predict_text 保持一致。"""
+    import predict   # 延迟导入，避免循环依赖
 
+    threshold = config.RUMOR_THRESHOLD if threshold is None else float(threshold)
+
+    try:
+        model, info = load_lstm()
+    except RuntimeError as e:
+        raise predict.ModelNotReady(str(e))
+
+    ids = text_to_ids(text, info["word2id"], info["max_len"])
     with torch.no_grad():
         prob = float(torch.sigmoid(model(torch.tensor([ids], dtype=torch.long)))[0])
 
+    is_rumor = prob >= threshold
     return {
         "prob": round(prob, 4),
         "prob_text": "{0:.1f}%".format(prob * 100),
-        "label": database.NATURE_RUMOR if prob >= config.RUMOR_THRESHOLD else database.NATURE_NORMAL,
+        "label": database.NATURE_RUMOR if is_rumor else database.NATURE_NORMAL,
+        "keywords": "",   # LSTM 没有可解释系数，这里留空
+        "is_rumor": is_rumor,
         "model": "LSTM",
     }
 

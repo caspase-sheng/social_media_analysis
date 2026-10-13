@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_HOST = "127.0.0.1"
 DB_PORT = 3306
 DB_USER = "root"
-DB_PASSWORD = "xin3485242626"   # TODO 改成自己 MySQL 的密码
+DB_PASSWORD = "root"   # TODO 改成自己 MySQL 的密码
 DB_NAME = "rumor_detection"
 DB_CHARSET = "utf8mb4"
 
@@ -91,3 +91,8 @@ STOP_WORDS = set([
     # 商品行情稿套话
     "报价", "生意", "产地", "品牌", "交易商", "交货地",
 ])
+
+# ---------------- 模型选择 ----------------
+# 主模型选择：'lr' 用 TF-IDF + 逻辑回归，'lstm' 用 LSTM
+# 改完记得重启 app.py
+MODEL_BACKEND = "lr"

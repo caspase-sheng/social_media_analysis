@@ -262,19 +262,6 @@ def main():
         print("  [失败] 写 keywords 表出错：{0}".format(e))
         return 1
 
-    try:
-        saved = database.save_keywords(word_freq, top_n=100)
-        print("  已写入 keywords 表 {0} 个词".format(saved))
-    except Exception as e:
-        print("  [失败] 写 keywords 表出错：{0}".format(e))
-        return 1
-
-    filled = 0
-    for raw_id, text in rows:
-        if database.update_message_keywords(raw_id, top_keywords_of_text(text)):
-            filled += 1
-    print("  已为 {0} 条消息回填关键词字段".format(filled))
-
     # 第五步：跑一遍 TF-IDF，主要是确认特征维度、看看 top 特征词合不合理
     if HAS_SKLEARN:
         print("\nTF-IDF 特征提取...")
@@ -288,7 +275,7 @@ def main():
     else:
         print("\n没装 scikit-learn，跳过 TF-IDF 这一步。安装命令：pip install scikit-learn")
 
-    print("\n预处理完成。下一步跑 python train_model.py 训练模型。")
+    print("\n预处理完成。下一步跑 python train_model.py 或 python train_lstm.py 训练模型。")
     return 0
 
 

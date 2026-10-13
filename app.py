@@ -411,6 +411,7 @@ def api_detect_all():
         {"ok": ok_count, "fail": fail_count, "total": total, "elapsed": elapsed},
         msg="已检测 {0} 条，用时 {1} 秒".format(ok_count, elapsed))
 
+
 @app.route("/api/batch-verify", methods=["POST"])
 def api_batch_verify():
     """
@@ -439,6 +440,8 @@ def api_batch_verify():
 
     return ok({"ok": ok_count, "fail": fail_count},
               msg="批量判断完成")
+
+
 @app.route("/api/verify/<int:raw_id>", methods=["POST"])
 def api_verify(raw_id):
     """
