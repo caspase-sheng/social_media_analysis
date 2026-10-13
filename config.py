@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_HOST = "127.0.0.1"
 DB_PORT = 3306
 DB_USER = "root"
-DB_PASSWORD = "root"   # TODO 改成自己 MySQL 的密码
+DB_PASSWORD = "xin3485242626"   # TODO 改成自己 MySQL 的密码
 DB_NAME = "rumor_detection"
 DB_CHARSET = "utf8mb4"
 

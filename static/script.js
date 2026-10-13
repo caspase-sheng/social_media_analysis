@@ -371,6 +371,35 @@ function initIndexPage() {
             btn.textContent = '一键检测';
         }
     });
+        // 一键判断：根据选择的阈值，将已检测的消息自动分类为谣言或非谣言
+    document.getElementById('btn-batch-verify').addEventListener('click', async function () {
+        const threshold = parseFloat(document.getElementById('batch-threshold').value);
+        const tip = `确定将所有已检测但未人工校验的消息，按概率 ${threshold * 100}% 为界限自动判定吗？\n（≥${threshold * 100}% 判定为谣言，<${threshold * 100}% 判定为非谣言）`;
+
+        if (!confirm(tip)) {
+            return;
+        }
+
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = '判断中...';
+        try {
+            const data = await apiPost('/api/batch-verify', { threshold: threshold });
+            if (data.ok === 0) {
+                alert('没有符合条件的数据，请先执行“一键检测”获取谣言概率。');
+            } else {
+                alert(`一键判断完成：成功处理 ${data.ok} 条。`);
+            }
+            listState.page = 1;
+            await loadList();
+            loadOverview();
+        } catch (err) {
+            alert('一键判断失败：' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '一键判断';
+        }
+    });
 
     // 排序方式改了立即重新查，不用再点搜索
     document.getElementById('sort').addEventListener('change', function () {

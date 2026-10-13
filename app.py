@@ -411,7 +411,34 @@ def api_detect_all():
         {"ok": ok_count, "fail": fail_count, "total": total, "elapsed": elapsed},
         msg="已检测 {0} 条，用时 {1} 秒".format(ok_count, elapsed))
 
+@app.route("/api/batch-verify", methods=["POST"])
+def api_batch_verify():
+    """
+    一键判断：根据指定的阈值，将已检测但未人工校验的消息批量标记为谣言或非谣言。
 
+    参数：
+        请求体必须传 threshold（0~1 之间的小数，例如 0.5 代表 50%）。
+
+    返回：{ok: 成功处理条数, fail: 跳过/失败条数}
+    """
+    params = body_params()
+    threshold = params.get("threshold")
+    if threshold is None:
+        return fail("缺少 threshold 参数", code=400)
+    try:
+        threshold = float(threshold)
+        if not (0 <= threshold <= 1):
+            return fail("threshold 必须在 0~1 之间", code=400)
+    except ValueError:
+        return fail("threshold 格式错误", code=400)
+
+    try:
+        ok_count, fail_count = database.batch_verify_messages(threshold)
+    except Exception as e:
+        return fail("批量判断出错：{0}".format(e), code=500)
+
+    return ok({"ok": ok_count, "fail": fail_count},
+              msg="批量判断完成")
 @app.route("/api/verify/<int:raw_id>", methods=["POST"])
 def api_verify(raw_id):
     """

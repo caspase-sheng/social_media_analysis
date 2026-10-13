@@ -489,3 +489,34 @@ td.nowrap {
         max-width: 220px;
     }
 }
+/* 修改原有的 tab-action 布局 */
+.tabs .tab-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+}
+
+.tabs .tab-action {
+    margin-left: 0 !important;
+    height: 30px;
+    padding: 0 14px;
+}
+
+/* 新增下拉框样式 */
+.threshold-select {
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid #d3d8e0;
+    border-radius: 4px;
+    background: #fff;
+    color: #2b2f36;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+}
+.threshold-select:focus {
+    border-color: #2f6fed;
+}

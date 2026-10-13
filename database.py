@@ -671,3 +671,53 @@ def get_overview():
         }
     finally:
         close_session()
+def batch_verify_messages(threshold):
+    """
+    批量根据阈值判断未校验消息。
+    只处理：概率不为空，且状态不是已处理的消息。
+    返回 (成功条数, 失败/跳过条数)。
+    """
+    session = get_session()
+    try:
+        # 找出所有未处理或已检测，且已经有谣言概率的数据
+        rows = (session.query(RawMessage)
+                .filter(RawMessage.status.in_([STATUS_PENDING, STATUS_DETECTED]))
+                .filter(RawMessage.rumor_prob.isnot(None))
+                .all())
+
+        if not rows:
+            return 0, 0
+
+        now = datetime.datetime.now()
+        ok_count = 0
+
+        for row in rows:
+            nature = NATURE_RUMOR if row.rumor_prob >= threshold else NATURE_NORMAL
+            row.nature = nature
+            row.status = STATUS_VERIFIED
+            row.processed_time = now
+
+            # 检查 processed_messages 里是否已存在，存在则更新，不存在则插入
+            exist = session.query(ProcessedMessage).filter(ProcessedMessage.raw_id == row.id).first()
+            if exist:
+                exist.nature = nature
+                exist.rumor_prob = row.rumor_prob
+                exist.processed_time = now
+            else:
+                session.add(ProcessedMessage(
+                    raw_id=row.id,
+                    text=row.text,
+                    nature=nature,
+                    source=row.source,
+                    rumor_prob=row.rumor_prob,
+                    processed_time=now,
+                ))
+            ok_count += 1
+
+        session.commit()
+        return ok_count, 0
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        close_session()
