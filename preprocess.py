@@ -6,8 +6,8 @@
 拿出一份 TF-IDF 特征矩阵看看维度对不对。
 
 这里定义的几个函数不只本文件在用，train_model.py 和 predict.py 也会 import，
-所以分词规则统一放在这里，保证训练和线上预测的处理方式完全一致。
-
+所以分词规则统一放在这里，保证训练和线上预测的处理方式完全一致
+（这一点挺关键，之前我训练用了一套清洗、预测用另一套，结果线上效果比训练差很多）。
 """
 
 import re
@@ -58,7 +58,7 @@ def clean_text(text):
     text = RE_TOPIC.sub(r"\1", text)
     text = RE_EMOJI_TAG.sub(" ", text)
     text = text.replace("\u3000", " ").replace("\xa0", " ").replace("\u200b", "")
-    # 把标点全干掉，中文标点也在内
+    # 这行会把标点全干掉，中文标点也在内
     text = RE_SPECIAL.sub(" ", text)
     text = RE_MULTI_SPACE.sub(" ", text)
     return text.strip()
@@ -81,7 +81,7 @@ def cut_words(text, remove_stopwords=True, min_length=2):
         # 这样就算环境缺库，后续流程也不会因为维度对不上直接报错
         chars = [ch for ch in clean_text(text) if ch.strip()]
         return [ch for ch in chars
-                if min_length <= len(ch) and not ch.isdigit() and not (remove_stopwords and ch in config.STOP_WORDS)]
+                if len(ch) >= 1 and not ch.isdigit() and not (remove_stopwords and ch in config.STOP_WORDS)]
 
     words = jieba.lcut(clean_text(text))
 
@@ -133,7 +133,7 @@ def build_corpus(rows):
 
 def count_word_frequency(rows, top_n=100):
     """
-    统计词频并截断到 top_n，返回 Counter。
+    统计全库词频，返回 Counter。
 
     rows 传 [(id, text)] 就行，内部会自己分词。
     """
@@ -197,6 +197,28 @@ def find_duplicates(rows):
     return {k: v for k, v in groups.items() if len(v) > 1}
 
 
+def rebuild_keywords():
+    """
+    读取库里的全部消息，重新统计词频并写入 keywords 表，同时回填每条消息的 keywords 字段。
+    供命令行和 app.py 启动时自动调用。
+    返回统计写入的词条数量。
+    """
+    import database  # 放在函数里导入，避免循环依赖
+
+    rows = database.get_all_raw_texts()
+    if not rows:
+        return 0
+
+    # 统计词频
+    word_freq = count_word_frequency(rows, top_n=100)
+    # 写入 keywords 表
+    saved = database.save_keywords(word_freq, top_n=100)
+    # 回填 raw_messages 的 keywords 字段
+    for raw_id, text in rows:
+        database.update_message_keywords(raw_id, top_keywords_of_text(text))
+
+    return saved
+
 def main():
     print("=" * 60)
     print("社交媒体谣言检测系统 - 文本预处理")
@@ -233,10 +255,12 @@ def main():
 
     # 第四步：词频统计，写 keywords 表 + 回填每条消息的 keywords 字段
     print("\n统计词频...")
-    word_freq = count_word_frequency(rows, top_n=100)
-    print("  高频词前 20 个：")
-    for word, freq in word_freq.most_common(20):
-        print("    {0:<8}{1}".format(word, freq))
+    try:
+        saved = rebuild_keywords()
+        print("  已写入 keywords 表 {0} 个词".format(saved))
+    except Exception as e:
+        print("  [失败] 写 keywords 表出错：{0}".format(e))
+        return 1
 
     try:
         saved = database.save_keywords(word_freq, top_n=100)

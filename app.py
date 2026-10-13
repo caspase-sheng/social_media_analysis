@@ -505,13 +505,25 @@ def check_environment():
 
 def main():
     check_environment()
+
+    # 自动检查并生成词云数据
+    try:
+        import preprocess
+        from database import get_keywords, count_messages
+
+        # 如果数据库里已经有消息，但关键词表为空，说明需要重新预处理
+        if count_messages() > 0 and not get_keywords(top_n=1):
+            print("[词云] 检测到关键词数据为空，正在自动生成词云数据...")
+            saved = preprocess.rebuild_keywords()
+            print("[词云] 自动生成完成，共写入 {0} 个关键词。".format(saved))
+    except Exception as e:
+        print("[词云] 自动生成词云数据失败：{0}".format(e))
+        print("       如果不影响演示，可以忽略此错误。")
+
     print("服务地址：http://127.0.0.1:{0}".format(config.PORT))
     print("按 Ctrl+C 停止服务")
     print("=" * 60)
-    # use_reloader=False：调试模式自动重载会开两个进程，换个端口容易冲突，
-    # 课程演示阶段关掉更稳；需要热重载的话把 debug 打开后自己改这里。
     app.run(host=config.HOST, port=config.PORT, debug=False, use_reloader=False)
-
 
 if __name__ == "__main__":
     main()

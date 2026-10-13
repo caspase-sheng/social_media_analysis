@@ -520,3 +520,36 @@ td.nowrap {
 .threshold-select:focus {
     border-color: #2f6fed;
 }
+/* 页码跳转 */
+.page-jump {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #5b6472;
+}
+
+.page-input {
+    width: 50px;
+    height: 26px;
+    text-align: center;
+    padding: 0 4px;
+    border: 1px solid #d3d8e0;
+    border-radius: 4px;
+    font-size: 13px;
+    outline: none;
+}
+
+.page-input:focus {
+    border-color: #2f6fed;
+}
+
+/* 隐藏掉 number 类型输入框右侧的上下箭头（保持美观） */
+.page-input::-webkit-outer-spin-button,
+.page-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.page-input[type=number] {
+    -moz-appearance: textfield;
+}

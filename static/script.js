@@ -208,12 +208,17 @@ function renderRows(tbody, data) {
     tbody.innerHTML = html;
 }
 
-/** 分页条。 */
+/** 分页条 */
 function renderPager(data) {
     const totalPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
-    document.getElementById('page-info').textContent =
-        '第 ' + data.page + ' / ' + totalPage + ' 页';
+    document.getElementById('total-page').textContent = totalPage;
     document.getElementById('total-info').textContent = '共 ' + data.total + ' 条';
+
+    // 同步当前页码到输入框，并设置输入框的最大值
+    const pageInput = document.getElementById('page-input');
+    pageInput.max = totalPage;
+    pageInput.value = data.page;
+
     document.getElementById('btn-prev').disabled = data.page <= 1;
     document.getElementById('btn-next').disabled = data.page >= totalPage;
 }
@@ -441,6 +446,28 @@ function initIndexPage() {
     document.getElementById('btn-next').addEventListener('click', function () {
         listState.page += 1;
         loadList();
+    });
+        // 页码跳转功能
+    function goToTargetPage() {
+        const totalPage = parseInt(document.getElementById('total-page').textContent) || 1;
+        let targetPage = parseInt(document.getElementById('page-input').value);
+
+        // 校验范围
+        if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
+        if (targetPage > totalPage) targetPage = totalPage;
+
+        // 与当前页码相同则不重新请求
+        if (targetPage === listState.page) return;
+
+        listState.page = targetPage;
+        loadList();
+    }
+
+    document.getElementById('btn-go').addEventListener('click', goToTargetPage);
+    document.getElementById('page-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            goToTargetPage();
+        }
     });
 
     // 表格里的“检测”按钮用事件委托，行是动态生成的，直接绑会丢
