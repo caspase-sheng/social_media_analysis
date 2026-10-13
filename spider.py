@@ -10,15 +10,28 @@
 main() 会先试真实爬虫，抓到就用抓到的，抓不到自动切到 CSV。
 这样答辩现场就算断网、或者某个站点改了页面结构，流程也能完整跑下来。
 
-接进来的站点（都在 fetch_from_web 的 FETCHERS 里，想加就照着写一个函数）：
-    今日头条热榜     JSON 接口
-    百度热搜榜       HTML
-    腾讯新闻热榜     JSON 接口
-    新浪滚动新闻     JSON 接口，支持翻页
-    澎湃新闻首页     HTML
-    中新网滚动新闻   HTML，支持翻页（页面声明的编码和实际不一致，代码里自动识别）
+接进来的站点（想加就照着写一个函数，再挂到对应的清单里）：
+    新闻热榜组
+        今日头条热榜     JSON 接口
+        百度热搜榜       HTML
+        腾讯新闻热榜     JSON 接口
+        新浪滚动新闻     JSON 接口，支持翻页
+        澎湃新闻首页     HTML
+        中新网滚动新闻   HTML，支持翻页（页面声明的编码和实际不一致，代码里自动识别）
+    辟谣组
+        中国互联网联合辟谣平台   HTML，列表标题 + “今日辟谣”日报正文
 
-关于 --keyword：这几个源都是通用热榜，不是按关键词搜索，
+谣言样本怎么进训练集：库里 raw_messages.nature 只由人工校验写入，
+爬来的谣言不会带标签进库；想让它们直接变成训练样本，跑的时候加 --append-rumors，
+会把抓到的谣言追加到 data/sample_data.csv 末尾，train_model.py 读 CSV 时就是正类。
+
+正文截断的处理：列表接口和列表页给的摘要经常是半截（结尾带省略号），
+这种一律顺着文章链接进详情页把正文抓回来（is_truncated + fetch_article_text），
+保证详情页看到的是完整内容。百度热搜是个极端例子：它的 HTML 里每张卡片放了
+长短两个摘要、都被“查看更多&gt;”截断，所以干脆改走 top.baidu.com 的 board 接口，
+那边给的 desc 是完整的。
+
+关于 --keyword：这几个源都是通用热榜 / 栏目列表，不是按关键词搜索，
 所以 keyword 目前只用于打印提示，不影响抓取结果。
 
 用法：
@@ -76,11 +89,84 @@ def clean_text(raw):
     text = re.sub(r"\s+", " ", text)
     # "//@某某:" 这种转发链在社交平台里很常见，留着会干扰分词
     text = re.sub(r"//@[^:：]{1,20}[:：]", " ", text)
-    # 百度热搜的卡片里带着"查看更多>"这种引导文字，是页面控件不是正文内容，
+    # 列表页上常带“查看更多>”这种引导文字，是页面控件不是正文内容，
     # 不删掉的话它会变成词云里最高频的词
     text = re.sub(r"查看更多>?", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def is_truncated(text):
+    """
+    判断一段摘要是不是被列表接口截断了。
+
+    各家截断都用省略号收尾（有的是三个点，有的是单个“…”字符），
+    所以只看结尾就够了。抓取时拿它当“要不要点进文章页”的开关，
+    没截断的就不多发请求。
+    """
+    if not text:
+        return False
+    return text.rstrip().endswith(("...", "…"))
+
+
+# 正文容器。各站结构不一样，从上往下试，命中第一个就停
+ARTICLE_BODY_SELECTORS = (
+    "div#artibody",                    # 新浪
+    "div#article",
+    "div[class*='content-article']",   # 腾讯新闻
+    "div.article-content",
+    "article",
+)
+
+# 文章页里混进来的页面元素：账号署名、App 引流、编辑署名之类，都不是正文。
+# 不过滤的话，详情页和词云里会全是“发布于某某官方账号”“登录某 APP”这种话
+ARTICLE_NOISE_RE = re.compile(
+    r"发布于.{0,12}官方账号"
+    r"|登录.{0,8}APP"
+    r"|搜索【"
+    r"|考评等级"
+    r"|(责任编辑|责编|编辑|记者)\s*[：:|｜]"
+    r"|^\s*来源[：:]"
+    r"|更多精彩|免责声明|扫码关注|原标题[：:]"
+)
+
+
+def fetch_article_text(url, max_length=600):
+    """
+    跟进文章页，把正文段落拼成一段文字。
+
+    为什么要写这个：列表接口 / 列表页给的摘要经常是半截，
+    原文藏在详情页里（百度热搜那个“查看更多>”就是这个意思）。
+    只拿半句话当一条消息，详情页看着就是断的，分词和训练也吃亏。
+
+    这里不挑站点，挨个试几个常见的正文容器，命中就用；
+    一个都没命中就返回 None，调用方自己决定是保留原摘要还是怎么办。
+    max_length 限制长度：正文动辄几千字，全存进去列表展示和分词都不划算，
+    取前面一段足够表达一条消息。
+    """
+    if not url:
+        return None
+    page = fetch_html(url)
+    if not page:
+        return None
+
+    soup = BeautifulSoup(page, "lxml")
+    for selector in ARTICLE_BODY_SELECTORS:
+        body = soup.select_one(selector)
+        if not body:
+            continue
+        paragraphs = []
+        for node in body.find_all("p"):
+            text = clean_text(node.get_text())
+            # 太短的段落多半是“记者：某某”这类署名行，跳过
+            if len(text) < 12:
+                continue
+            if ARTICLE_NOISE_RE.search(text):
+                continue
+            paragraphs.append(text)
+        if paragraphs:
+            return " ".join(paragraphs)[:max_length]
+    return None
 
 
 def pick_image(value):
@@ -259,28 +345,41 @@ def fetch_toutiao(pages=1):
 
 
 def fetch_baidu(pages=1):
-    """百度热搜榜。HTML 页面，卡片结构。"""
-    url = "https://top.baidu.com/board?tab=realtime"
-    html = fetch_html(url)
-    if not html:
+    """
+    百度热搜榜。
+
+    走 top.baidu.com 的 board 接口（platform=pc），返回 JSON，desc 是完整摘要。
+
+    早期版本是解析 HTML 的，那个页面有个坑：每张卡片放了两个摘要 div，
+    小的给窄屏用、大的给宽屏用，两个都用省略号截断，后面挂一个
+    “查看更多&gt;”的链接。选择器 div[class*="hot-desc"] 命中的恰好是排在前面的
+    短的那一个，所以详情页里看到的正文总是半截。接口这条路没有截断问题
+    （实测 50 条 desc 全部不带省略号），顺带还省掉了“查看更多”这种页面控件。
+
+    pages 对这里没意义（榜单就一页），保留参数是为了和别的抓取函数签名一致。
+    """
+    data = fetch_json("https://top.baidu.com/api/board?platform=pc&tab=realtime")
+    if not data:
         return []
 
-    soup = BeautifulSoup(html, "lxml")
+    cards = (data.get("data") or {}).get("cards") or []
+    if not cards:
+        return []
+
+    card = cards[0]
+    # content 是榜单主体，topContent 是置顶的那一条，两部分都要
+    rows = list(card.get("content") or [])
+    if isinstance(card.get("topContent"), list):
+        rows = list(card["topContent"]) + rows
+
     items = []
-    # 卡片的 class 带了一串随机后缀，用子串匹配更稳
-    for card in soup.select('div[class*="category-wrap"]'):
-        title_node = card.select_one('div[class*="c-single-text-ellipsis"]')
-        if not title_node:
-            continue
-        title = clean_text(title_node.get_text())
+    for row in rows:
+        title = clean_text(row.get("word"))
         if not title:
             continue
-        desc_node = card.select_one('div[class*="hot-desc"]')
-        desc = clean_text(desc_node.get_text()) if desc_node else ""
-        img_node = card.select_one("img")
         items.append({
-            "text": join_text(title, desc),
-            "image_url": pick_image(img_node.get("src")) if img_node else None,
+            "text": join_text(title, row.get("desc")),
+            "image_url": pick_image(row.get("img")),
             "source": "百度热搜",
             "timestamp": None,
         })
@@ -288,7 +387,12 @@ def fetch_baidu(pages=1):
 
 
 def fetch_tencent(pages=1):
-    """腾讯新闻热榜。JSON 接口，榜单第一条是横幅，没有 source，要跳过。"""
+    """
+    腾讯新闻热榜。JSON 接口，榜单第一条是横幅，没有 source，要跳过。
+
+    列表接口的 abstract 是截断过的（实测 30 条里有 24 条以省略号收尾），
+    遇到这种就顺着 url 进文章页把正文取回来，详情页里才看得到完整内容。
+    """
     url = "https://r.inews.qq.com/gw/event/hot_ranking_list?page_size=30"
     data = fetch_json(url)
     if not data:
@@ -306,8 +410,18 @@ def fetch_tencent(pages=1):
         title = clean_text(row.get("title"))
         if not title:
             continue
+
+        desc = clean_text(row.get("abstract"))
+        # 只对真被截断的才多发一次请求，没截断的直接用摘要
+        if is_truncated(desc):
+            full = fetch_article_text(row.get("url") or row.get("surl"))
+            if full:
+                desc = full
+                # 同一个站连着取好几篇正文，中间歇一下
+                time.sleep(random.uniform(0.4, 0.9))
+
         items.append({
-            "text": join_text(title, row.get("abstract")),
+            "text": join_text(title, desc),
             "image_url": None,
             "source": "腾讯新闻",
             "timestamp": row.get("time") or ts_from_unix(row.get("timestamp")),
@@ -316,7 +430,13 @@ def fetch_tencent(pages=1):
 
 
 def fetch_sina(pages=2):
-    """新浪滚动新闻。JSON 接口，支持翻页，摘要字段是 intro。"""
+    """
+    新浪滚动新闻。JSON 接口，支持翻页，摘要字段是 intro。
+
+    intro 同样有被截断的情况（实测 20 条里 9 条以省略号收尾），
+    处理方式和腾讯一致：截断了就进文章页取正文。
+    summary 字段多数时候是空的，所以优先用 intro。
+    """
     items = []
     for page in range(1, pages + 1):
         url = ("https://feed.mix.sina.com.cn/api/roll/get"
@@ -332,6 +452,12 @@ def fetch_sina(pages=2):
                 continue
             # intro 是真实摘要，summary 多数时候是空的，两个都试一下
             desc = clean_text(row.get("intro") or row.get("summary"))
+            # 摘要被截断的，跟进文章页把正文取回来
+            if is_truncated(desc):
+                full = fetch_article_text(row.get("url") or row.get("wapurl"))
+                if full:
+                    desc = full
+                    time.sleep(random.uniform(0.4, 0.9))
             items.append({
                 "text": join_text(title, desc),
                 "image_url": pick_image(row.get("img")),
