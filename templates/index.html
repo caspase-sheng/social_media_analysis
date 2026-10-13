@@ -118,7 +118,10 @@
         <div class="pager">
             <button class="btn plain mini" id="btn-prev">上一页</button>
             <button class="btn plain mini" id="btn-next">下一页</button>
-            <span id="page-info">-</span>
+            <span class="page-jump">
+                第 <input type="number" id="page-input" min="1" value="1" class="page-input"> / <span id="total-page">1</span> 页
+                <button class="btn plain mini" id="btn-go">跳转</button>
+            </span>
             <span class="spacer"></span>
             <span id="total-info"></span>
         </div>
